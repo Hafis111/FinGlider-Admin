@@ -15,8 +15,9 @@ app.use(cors());
 
 app.use(bodyParser.json());
 
+// Use routes and add base path directly in app.js
+app.use("/departments", departmentRoutes); // Base path for department routes
 app.use(otpRoutes);
-app.use(departmentRoutes);
 app.use(userRoutes);
 
 const PORT = 3010;

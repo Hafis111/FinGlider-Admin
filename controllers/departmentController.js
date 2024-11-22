@@ -39,4 +39,36 @@ const getDepartments = async (req, res) => {
   }
 };
 
-module.exports = { postDepartment, getDepartments };
+// Controller to delete a department by ID
+const deleteDepartment = async (req, res) => {
+  const { id } = req.params; // Get department ID from URL parameter
+
+  try {
+    // Use Sequelize directly to delete the department by ID
+    const result = await Department.destroy({
+      where: { id },
+    });
+
+    // If result is 1, deletion was successful
+    if (result) {
+      res.status(200).json({
+        success: true,
+        message: "Department deleted successfully.",
+      });
+    } else {
+      res.status(404).json({
+        success: false,
+        message: "Department not found.",
+      });
+    }
+  } catch (error) {
+    console.error("Error deleting department:", error.message); // Log the error for better debugging
+    res.status(500).json({
+      success: false,
+      message: "Error deleting department.",
+      error: error.message,
+    });
+  }
+};
+
+module.exports = { postDepartment, getDepartments, deleteDepartment };

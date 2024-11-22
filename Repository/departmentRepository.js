@@ -6,6 +6,11 @@ const getAllDepartments = async () => {
   });
 };
 
+const deleteDepartmentById = async (id) => {
+  return await Department.destroy({ where: { id } });
+};
+
 module.exports = {
   getAllDepartments,
+  deleteDepartmentById,
 };
