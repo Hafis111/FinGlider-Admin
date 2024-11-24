@@ -70,5 +70,54 @@ const deleteDepartment = async (req, res) => {
     });
   }
 };
+const updateDepartment = async (req, res) => {
+  const { id } = req.params;
+  const { name, description } = req.body;
 
-module.exports = { postDepartment, getDepartments, deleteDepartment };
+  if (!name) {
+    return res
+      .status(400)
+      .json({ success: false, message: "Name is required" });
+  }
+
+  // Check if department name already exists (if updating to an existing name)
+  const existingDepartment = await Department.findOne({ where: { name } });
+  if (existingDepartment && existingDepartment.id !== id) {
+    return res
+      .status(400)
+      .json({
+        success: false,
+        message: "Department with this name already exists.",
+      });
+  }
+
+  try {
+    const department = await Department.findByPk(id);
+    if (!department) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Department not found" });
+    }
+
+    // Update department fields
+    department.name = name;
+    department.description = description;
+    await department.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Department updated successfully",
+      department,
+    });
+  } catch (err) {
+    console.error("Error updating department:", err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+module.exports = {
+  postDepartment,
+  getDepartments,
+  deleteDepartment,
+  updateDepartment,
+};

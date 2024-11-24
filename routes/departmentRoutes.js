@@ -3,13 +3,14 @@ const {
   postDepartment,
   getDepartments,
   deleteDepartment,
+  updateDepartment,
 } = require("../controllers/departmentController");
 
 const router = express.Router();
 
-// Define only the dynamic part of the routes (no "/departments" prefix here)
-router.post("/", postDepartment); // POST request to create a department
-router.get("/", getDepartments); // GET request to fetch all departments
-router.delete("/:id", deleteDepartment); // DELETE request to delete a specific department by id
+router.post("/", postDepartment);
+router.get("/", getDepartments);
+router.delete("/:id", deleteDepartment);
+router.put("/:id", updateDepartment);
 
 module.exports = router;
