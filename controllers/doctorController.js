@@ -4,7 +4,7 @@ const Department = require("../models/department");
 
 // Controller to create doctor with availability
 const createDoctorAvailability = async (req, res) => {
-  const { name, departmentId, availableDaysAndTime } = req.body;
+  const { name, departmentId, availableDaysAndTime, status = true } = req.body; // Include status with a default value
 
   if (!name || !departmentId || !availableDaysAndTime) {
     return res.status(400).json({
@@ -18,6 +18,7 @@ const createDoctorAvailability = async (req, res) => {
     const doctor = await Doctor.create({
       name,
       departmentId,
+      status, // Include status when creating a doctor
     });
 
     // Create availability records for the doctor
@@ -30,7 +31,6 @@ const createDoctorAvailability = async (req, res) => {
       })
     );
 
-    // Wait for all availability records to be created
     await Promise.all(availabilityPromises);
 
     res.status(201).json({
@@ -148,10 +148,48 @@ const deleteDoctor = async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 };
+const updateDoctorStatus = async (req, res) => {
+  const { id } = req.params; // Doctor ID from the route parameter
+  const { status } = req.body; // New status from the request body
+
+  // Validate the request body
+  if (status === undefined) {
+    return res.status(400).json({
+      success: false,
+      message: "Doctor status is required.",
+    });
+  }
+
+  try {
+    // Find the doctor by ID
+    const doctor = await Doctor.findByPk(id);
+
+    if (!doctor) {
+      return res.status(404).json({
+        success: false,
+        message: "Doctor not found.",
+      });
+    }
+
+    // Update the status field
+    doctor.status = status;
+    await doctor.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Doctor status updated successfully.",
+      doctor,
+    });
+  } catch (err) {
+    console.error("Error updating doctor status:", err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
 
 module.exports = {
   createDoctorAvailability,
   updateDoctorAvailability,
   getAllDoctors,
   deleteDoctor,
+  updateDoctorStatus,
 };

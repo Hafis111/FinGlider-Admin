@@ -15,6 +15,11 @@ const Doctor = sequelize.define("Doctor", {
     },
     allowNull: false,
   },
+  status: {
+    type: DataTypes.BOOLEAN, // True for available, False for not available
+    allowNull: false,
+    defaultValue: true, // Default to true (available)
+  },
 });
 
 Doctor.belongsTo(Department, { foreignKey: "departmentId" });
