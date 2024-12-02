@@ -4,6 +4,8 @@ const cors = require("cors"); // Import cors package
 const otpRoutes = require("./routes/otpRoutes");
 const userRoutes = require("./routes/userRoutes");
 const departmentRoutes = require("./routes/departmentRoutes");
+const doctorRoutes = require("./routes/doctorRoutes");
+const dashboardRoutes = require("./routes/dashboardRoutes");
 
 const app = express();
 
@@ -11,14 +13,16 @@ const app = express();
 app.use(cors());
 
 // Alternatively, you can restrict CORS to a specific origin:
-// app.use(cors({ origin: 'http://localhost:3000' }));
+// app.use(cors({ origin: 'http://localhost:3000' }));x
 
 app.use(bodyParser.json());
 
 // Use routes and add base path directly in app.js
-app.use("/departments", departmentRoutes); // Base path for department routes
+app.use("/departments", departmentRoutes);
+app.use("/doctors", doctorRoutes);
 app.use(otpRoutes);
 app.use(userRoutes);
+app.use("/dashboard", dashboardRoutes);
 
 const PORT = 3010;
 app.listen(PORT, (err) => {
