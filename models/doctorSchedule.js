@@ -35,6 +35,12 @@ const DoctorSchedule = sequelize.define(
               "customDays is required for custom recurringPattern"
             );
           }
+          // Validate that customDays is a string of 7 characters, each being '0' or '1'
+          if (this.recurringPattern === "custom" && !/^[01]{7}$/.test(value)) {
+            throw new Error(
+              "customDays must be a 7-character string of 0s and 1s"
+            );
+          }
         },
       },
     },

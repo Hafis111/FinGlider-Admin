@@ -2,25 +2,44 @@ const { DataTypes } = require("sequelize");
 const sequelize = require("../Config/db");
 const Department = require("./department");
 
-const Doctor = sequelize.define("Doctor", {
-  name: {
-    type: DataTypes.STRING,
-    allowNull: false,
-  },
-  departmentId: {
-    type: DataTypes.INTEGER,
-    references: {
-      model: Department,
-      key: "id",
+const Doctor = sequelize.define(
+  "Doctor",
+  {
+    name: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      validate: {
+        len: [3, 100], // Ensure the name is between 3 and 100 characters
+      },
     },
-    allowNull: false,
+    departmentId: {
+      type: DataTypes.INTEGER,
+      references: {
+        model: Department,
+        key: "id",
+      },
+      allowNull: false,
+      onDelete: "CASCADE", // Automatically delete doctors if the department is deleted
+    },
+    status: {
+      type: DataTypes.ENUM("active", "inactive"), // Status is either 'active' or 'inactive'
+      allowNull: false,
+      defaultValue: "active", // Default to 'active'
+    },
+    startDate: {
+      type: DataTypes.DATE,
+      allowNull: false, // Ensure that a start date is provided
+    },
+    bookingCount: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      defaultValue: 7, // Default to 7 bookings if not specified
+    },
   },
-  status: {
-    type: DataTypes.BOOLEAN, // True for available, False for not available
-    allowNull: false,
-    defaultValue: true, // Default to true (available)
-  },
-});
+  {
+    timestamps: true, // Adds createdAt and updatedAt fields
+  }
+);
 
 Doctor.belongsTo(Department, { foreignKey: "departmentId" });
 
