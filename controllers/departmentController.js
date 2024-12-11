@@ -83,12 +83,10 @@ const updateDepartment = async (req, res) => {
   // Check if department name already exists (if updating to an existing name)
   const existingDepartment = await Department.findOne({ where: { name } });
   if (existingDepartment && existingDepartment.id !== id) {
-    return res
-      .status(400)
-      .json({
-        success: false,
-        message: "Department with this name already exists.",
-      });
+    return res.status(400).json({
+      success: false,
+      message: "Department with this name already exists.",
+    });
   }
 
   try {

@@ -1,195 +1,165 @@
 const Doctor = require("../models/doctor");
-const DoctorAvailability = require("../models/doctorAvailability");
+const DoctorSchedule = require("../models/doctorSchedule");
 const Department = require("../models/department");
+const Booking = require("../models/Booking");
+const BlockedSlot = require("../models/BlockedSlot");
+const { generateRecurringDates } = require("../utils/reccuringLogic");
+const sequelize = require("../Config/db");
 
-// Controller to create doctor with availability
-const createDoctorAvailability = async (req, res) => {
-  const { name, departmentId, availableDaysAndTime, status = true } = req.body; // Include status with a default value
+const createDoctorWithSchedule = async (req, res) => {
+  const { name, departmentId, schedule } = req.body; // schedule is an array of schedule objects
 
-  if (!name || !departmentId || !availableDaysAndTime) {
-    return res.status(400).json({
-      success: false,
-      message: "Doctor name, department ID, and availability are required.",
-    });
-  }
+  const transaction = await sequelize.transaction();
 
   try {
-    // Create the doctor record
-    const doctor = await Doctor.create({
-      name,
-      departmentId,
-      status, // Include status when creating a doctor
-    });
-
-    // Create availability records for the doctor
-    const availabilityPromises = Object.keys(availableDaysAndTime).map((day) =>
-      DoctorAvailability.create({
-        doctorId: doctor.id,
-        day,
-        timeRange: availableDaysAndTime[day].timeRange,
-        availableSlots: availableDaysAndTime[day].availableSlots,
-      })
-    );
-
-    await Promise.all(availabilityPromises);
-
-    res.status(201).json({
-      success: true,
-      message: "Doctor created successfully with availability.",
-      doctor,
-    });
-  } catch (err) {
-    console.error("Error creating doctor availability:", err.message);
-    res.status(500).json({ success: false, error: err.message });
-  }
-};
-
-// Controller to update doctor availability
-const updateDoctorAvailability = async (req, res) => {
-  const { id } = req.params;
-  const { availableDaysAndTime } = req.body;
-
-  if (!availableDaysAndTime) {
-    return res.status(400).json({
-      success: false,
-      message: "Doctor availability is required.",
-    });
-  }
-
-  try {
-    const doctor = await Doctor.findByPk(id);
-
-    if (!doctor) {
-      return res.status(404).json({
-        success: false,
-        message: "Doctor not found.",
-      });
+    // Validate if the departmentId exists
+    const department = await Department.findByPk(departmentId);
+    if (!department) {
+      return res.status(404).json({ error: "Department not found" });
     }
 
-    // Update availability records
-    const availabilityPromises = Object.keys(availableDaysAndTime).map((day) =>
-      DoctorAvailability.upsert({
+    // Create doctor
+    const doctor = await Doctor.create({ name, departmentId }, { transaction });
+
+    // Prepare the schedules
+    const schedules = schedule.map((s) => {
+      // Validate token-based scheduling
+      if (s.tokenBased && (!s.availableTokens || s.availableTokens <= 0)) {
+        throw new Error(
+          "availableTokens must be greater than 0 for token-based scheduling."
+        );
+      }
+
+      // Validate bookingCount
+      if (s.bookingCount && s.bookingCount <= 0) {
+        throw new Error("bookingCount must be a positive number.");
+      }
+
+      return {
         doctorId: doctor.id,
-        day,
-        timeRange: availableDaysAndTime[day].timeRange,
-        availableSlots: availableDaysAndTime[day].availableSlots,
-      })
-    );
-
-    // Wait for all availability records to be updated
-    await Promise.all(availabilityPromises);
-
-    res.status(200).json({
-      success: true,
-      message: "Doctor availability updated successfully.",
-      doctor,
+        startTime: s.startTime,
+        endTime: s.endTime,
+        recurringPattern: s.recurringPattern,
+        customDays: s.customDays,
+        startDate: s.startDate,
+        bookingCount: s.bookingCount || 7, // Defaults to 7 if not provided
+        slotInterval: s.slotInterval || null, // Null for token-based
+        tokenBased: s.tokenBased,
+        availableTokens: s.availableTokens || null,
+      };
     });
-  } catch (err) {
-    console.error("Error updating doctor availability:", err.message);
-    res.status(500).json({ success: false, error: err.message });
+
+    // Create schedules in bulk
+    await DoctorSchedule.bulkCreate(schedules, { transaction });
+
+    // Commit the transaction
+    await transaction.commit();
+
+    // Return success response
+    res.status(201).json({
+      message: "Doctor and schedules created successfully",
+      doctor,
+      schedules,
+    });
+  } catch (error) {
+    // Rollback the transaction if any error occurs
+    await transaction.rollback();
+    console.error(error);
+    res
+      .status(500)
+      .json({ error: error.message || "Failed to create doctor and schedule" });
   }
 };
 
-// Controller to get all doctors
-const getAllDoctors = async (req, res) => {
+const getDoctorsWithSchedules = async (req, res) => {
   try {
+    // Fetch all doctors with schedules, bookings, and blocked slots
     const doctors = await Doctor.findAll({
       include: [
         {
-          model: Department,
-          attributes: ["id", "name"], // Include only relevant fields
-        },
-        {
-          model: DoctorAvailability,
-          attributes: ["day", "timeRange", "availableSlots"], // Include availability details
+          model: DoctorSchedule,
+          include: [
+            {
+              model: Booking,
+            },
+            {
+              model: BlockedSlot,
+            },
+          ],
         },
       ],
     });
 
-    res.status(200).json({
-      success: true,
-      message: "Doctors fetched successfully.",
-      doctors,
+    // Process the data
+    const result = doctors.map((doctor) => {
+      return {
+        id: doctor.id,
+        name: doctor.name,
+        departmentId: doctor.departmentId,
+        schedules: doctor.DoctorSchedules.map((schedule) => {
+          // Generate recurring dates
+          const recurringDates = generateRecurringDates(
+            schedule.startDate,
+            schedule.recurringPattern,
+            schedule.customDays,
+            schedule.bookingCount
+          );
+
+          // Process each recurring date
+          const dates = recurringDates.map((date) => {
+            // Filter bookings and blocked slots for the current date
+            const bookedSlots = schedule.Bookings.filter(
+              (booking) => booking.bookingDate === date
+            ).map((booking) => ({
+              startTime: booking.startTime,
+              endTime: booking.endTime,
+              tokenNumber: booking.tokenNumber, // Ensure tokenNumber exists in the Booking model
+              patientName: booking.patientName,
+            }));
+
+            const blockedSlots = schedule.BlockedSlots.filter(
+              (blockedSlot) => blockedSlot.blockedDate === date
+            ).map((blockedSlot) => ({
+              startTime: blockedSlot.startTime,
+              endTime: blockedSlot.endTime,
+              reason: blockedSlot.reason,
+            }));
+
+            // Calculate remaining tokens
+            const remainingTokens =
+              schedule.tokenBased &&
+              schedule.availableTokens - bookedSlots.length;
+
+            return {
+              date,
+              remainingTokens: remainingTokens || null,
+              bookedSlots,
+              blockedSlots,
+            };
+          });
+
+          return {
+            id: schedule.id,
+            startTime: schedule.startTime,
+            endTime: schedule.endTime,
+            recurringPattern: schedule.recurringPattern,
+            customDays: schedule.customDays,
+            startDate: schedule.startDate,
+            bookingCount: schedule.bookingCount,
+            tokenBased: schedule.tokenBased,
+            availableTokens: schedule.availableTokens,
+            recurringDates: dates,
+          };
+        }),
+      };
     });
-  } catch (err) {
-    console.error("Error fetching doctors:", err.message);
-    res.status(500).json({ success: false, error: err.message });
+
+    // Send the response
+    res.json(result);
+  } catch (error) {
+    console.error("Error fetching doctors with schedules:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 };
 
-// Controller to delete a doctor
-const deleteDoctor = async (req, res) => {
-  const { id } = req.params;
-
-  try {
-    const doctor = await Doctor.findByPk(id);
-
-    if (!doctor) {
-      return res.status(404).json({
-        success: false,
-        message: "Doctor not found.",
-      });
-    }
-
-    // Delete the doctor availability records first to maintain referential integrity
-    await DoctorAvailability.destroy({
-      where: { doctorId: id },
-    });
-
-    // Delete the doctor record
-    await doctor.destroy();
-
-    res.status(200).json({
-      success: true,
-      message: "Doctor and their availability deleted successfully.",
-    });
-  } catch (err) {
-    console.error("Error deleting doctor:", err.message);
-    res.status(500).json({ success: false, error: err.message });
-  }
-};
-const updateDoctorStatus = async (req, res) => {
-  const { id } = req.params; // Doctor ID from the route parameter
-  const { status } = req.body; // New status from the request body
-
-  // Validate the request body
-  if (status === undefined) {
-    return res.status(400).json({
-      success: false,
-      message: "Doctor status is required.",
-    });
-  }
-
-  try {
-    // Find the doctor by ID
-    const doctor = await Doctor.findByPk(id);
-
-    if (!doctor) {
-      return res.status(404).json({
-        success: false,
-        message: "Doctor not found.",
-      });
-    }
-
-    // Update the status field
-    doctor.status = status;
-    await doctor.save();
-
-    res.status(200).json({
-      success: true,
-      message: "Doctor status updated successfully.",
-      doctor,
-    });
-  } catch (err) {
-    console.error("Error updating doctor status:", err.message);
-    res.status(500).json({ success: false, error: err.message });
-  }
-};
-
-module.exports = {
-  createDoctorAvailability,
-  updateDoctorAvailability,
-  getAllDoctors,
-  deleteDoctor,
-  updateDoctorStatus,
-};
+module.exports = { createDoctorWithSchedule, getDoctorsWithSchedules };
