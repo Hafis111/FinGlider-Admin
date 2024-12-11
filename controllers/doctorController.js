@@ -7,7 +7,7 @@ const { generateRecurringDates } = require("../utils/reccuringLogic");
 const sequelize = require("../Config/db");
 
 const createDoctorWithSchedule = async (req, res) => {
-  const { name, departmentId, schedule } = req.body; // schedule is an array of schedule objects
+  const { name, departmentId, startDate, bookingCount, schedules } = req.body; // schedules is an array of schedule objects
 
   const transaction = await sequelize.transaction();
 
@@ -18,39 +18,38 @@ const createDoctorWithSchedule = async (req, res) => {
       return res.status(404).json({ error: "Department not found" });
     }
 
-    // Create doctor
-    const doctor = await Doctor.create({ name, departmentId }, { transaction });
+    // Create doctor with global startDate and bookingCount
+    const doctor = await Doctor.create(
+      { name, departmentId, startDate, bookingCount: bookingCount || 7 },
+      { transaction }
+    );
 
     // Prepare the schedules
-    const schedules = schedule.map((s) => {
+    const preparedSchedules = schedules.map((schedule) => {
       // Validate token-based scheduling
-      if (s.tokenBased && (!s.availableTokens || s.availableTokens <= 0)) {
+      if (
+        schedule.tokenBased &&
+        (!schedule.availableTokens || schedule.availableTokens <= 0)
+      ) {
         throw new Error(
           "availableTokens must be greater than 0 for token-based scheduling."
         );
       }
 
-      // Validate bookingCount
-      if (s.bookingCount && s.bookingCount <= 0) {
-        throw new Error("bookingCount must be a positive number.");
-      }
-
       return {
         doctorId: doctor.id,
-        startTime: s.startTime,
-        endTime: s.endTime,
-        recurringPattern: s.recurringPattern,
-        customDays: s.customDays,
-        startDate: s.startDate,
-        bookingCount: s.bookingCount || 7, // Defaults to 7 if not provided
-        slotInterval: s.slotInterval || null, // Null for token-based
-        tokenBased: s.tokenBased,
-        availableTokens: s.availableTokens || null,
+        startTime: schedule.startTime,
+        endTime: schedule.endTime,
+        recurringPattern: schedule.recurringPattern,
+        customDays: schedule.customDays,
+        slotInterval: schedule.slotInterval || null, // Null for token-based schedules
+        tokenBased: schedule.tokenBased,
+        availableTokens: schedule.availableTokens || null,
       };
     });
 
     // Create schedules in bulk
-    await DoctorSchedule.bulkCreate(schedules, { transaction });
+    await DoctorSchedule.bulkCreate(preparedSchedules, { transaction });
 
     // Commit the transaction
     await transaction.commit();
@@ -59,107 +58,124 @@ const createDoctorWithSchedule = async (req, res) => {
     res.status(201).json({
       message: "Doctor and schedules created successfully",
       doctor,
-      schedules,
+      schedules: preparedSchedules,
     });
   } catch (error) {
     // Rollback the transaction if any error occurs
     await transaction.rollback();
     console.error(error);
-    res
-      .status(500)
-      .json({ error: error.message || "Failed to create doctor and schedule" });
+    res.status(500).json({
+      error: error.message || "Failed to create doctor and schedules",
+    });
   }
 };
 
-const getDoctorsWithSchedules = async (req, res) => {
+const getDoctorWithSchedules = async (req, res) => {
   try {
-    // Fetch all doctors with schedules, bookings, and blocked slots
+    console.log("Fetching doctors with schedules...");
+
+    // Fetch all doctors with their schedules
     const doctors = await Doctor.findAll({
       include: [
         {
           model: DoctorSchedule,
+          as: "doctorSchedules",
           include: [
             {
               model: Booking,
+              as: "bookedSlots",
+              attributes: [
+                "startTime",
+                "endTime",
+                "tokenNumber",
+                "patientName",
+              ],
             },
             {
               model: BlockedSlot,
+              as: "blockedSlots",
+              attributes: ["date", "startTime", "endTime"],
             },
           ],
         },
       ],
     });
 
-    // Process the data
-    const result = doctors.map((doctor) => {
+    console.log("Doctors fetched:", doctors);
+
+    // Format the response
+    const formattedDoctors = doctors.map((doctor) => {
+      const schedules = doctor.doctorSchedules.map((schedule) => {
+        // Calculate recurring dates
+        const recurringDates = calculateRecurringDates(schedule);
+
+        return {
+          id: schedule.id,
+          startTime: schedule.startTime,
+          endTime: schedule.endTime,
+          recurringPattern: schedule.recurringPattern,
+          customDays: schedule.customDays,
+          tokenBased: schedule.tokenBased,
+          availableTokens: schedule.availableTokens,
+          recurringDates: recurringDates.map((date) => {
+            // Filter booked and blocked slots for this date
+            const bookedSlots = schedule.bookedSlots.filter(
+              (slot) => slot.date === date
+            );
+            const blockedSlots = schedule.blockedSlots.filter(
+              (slot) => slot.date === date
+            );
+
+            return {
+              date,
+              remainingTokens: schedule.tokenBased
+                ? schedule.availableTokens - bookedSlots.length
+                : null,
+              bookedSlots,
+              blockedSlots,
+            };
+          }),
+        };
+      });
+
       return {
         id: doctor.id,
         name: doctor.name,
         departmentId: doctor.departmentId,
-        schedules: doctor.DoctorSchedules.map((schedule) => {
-          // Generate recurring dates
-          const recurringDates = generateRecurringDates(
-            schedule.startDate,
-            schedule.recurringPattern,
-            schedule.customDays,
-            schedule.bookingCount
-          );
-
-          // Process each recurring date
-          const dates = recurringDates.map((date) => {
-            // Filter bookings and blocked slots for the current date
-            const bookedSlots = schedule.Bookings.filter(
-              (booking) => booking.bookingDate === date
-            ).map((booking) => ({
-              startTime: booking.startTime,
-              endTime: booking.endTime,
-              tokenNumber: booking.tokenNumber, // Ensure tokenNumber exists in the Booking model
-              patientName: booking.patientName,
-            }));
-
-            const blockedSlots = schedule.BlockedSlots.filter(
-              (blockedSlot) => blockedSlot.blockedDate === date
-            ).map((blockedSlot) => ({
-              startTime: blockedSlot.startTime,
-              endTime: blockedSlot.endTime,
-              reason: blockedSlot.reason,
-            }));
-
-            // Calculate remaining tokens
-            const remainingTokens =
-              schedule.tokenBased &&
-              schedule.availableTokens - bookedSlots.length;
-
-            return {
-              date,
-              remainingTokens: remainingTokens || null,
-              bookedSlots,
-              blockedSlots,
-            };
-          });
-
-          return {
-            id: schedule.id,
-            startTime: schedule.startTime,
-            endTime: schedule.endTime,
-            recurringPattern: schedule.recurringPattern,
-            customDays: schedule.customDays,
-            startDate: schedule.startDate,
-            bookingCount: schedule.bookingCount,
-            tokenBased: schedule.tokenBased,
-            availableTokens: schedule.availableTokens,
-            recurringDates: dates,
-          };
-        }),
+        schedules,
       };
     });
 
-    // Send the response
-    res.json(result);
+    res.status(200).json(formattedDoctors);
   } catch (error) {
-    console.error("Error fetching doctors with schedules:", error);
-    res.status(500).json({ error: "Internal server error" });
+    console.error("Error fetching doctor schedules:", error.message);
+    res.status(500).json({ error: "Failed to fetch doctor schedules" });
   }
 };
 
-module.exports = { createDoctorWithSchedule, getDoctorsWithSchedules };
+// Helper function to calculate recurring dates
+const calculateRecurringDates = (schedule) => {
+  const { recurringPattern, customDays, startDate, endDate } = schedule;
+
+  const recurringDates = [];
+  const currentDate = new Date(startDate);
+  const end = new Date(endDate);
+
+  while (currentDate <= end) {
+    const dayIndex = currentDate.getDay(); // 0 for Sunday, 6 for Saturday
+    const customDaysArray = customDays?.split("").map(Number);
+
+    if (
+      recurringPattern === "daily" ||
+      (recurringPattern === "weekly" && customDaysArray[dayIndex] === 1)
+    ) {
+      recurringDates.push(currentDate.toISOString().split("T")[0]); // Push date in 'YYYY-MM-DD' format
+    }
+
+    currentDate.setDate(currentDate.getDate() + 1); // Increment date by 1 day
+  }
+
+  return recurringDates;
+};
+
+module.exports = { createDoctorWithSchedule, getDoctorWithSchedules };

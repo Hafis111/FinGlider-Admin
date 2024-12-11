@@ -27,15 +27,16 @@ const DoctorSchedule = sequelize.define(
     },
     customDays: {
       type: DataTypes.STRING, // E.g., '1010101' for Mon, Wed, Fri
-      allowNull: true,
-    },
-    startDate: {
-      type: DataTypes.DATEONLY,
-      allowNull: false,
-    },
-    bookingCount: {
-      type: DataTypes.INTEGER, // Number of bookings for this schedule
-      allowNull: false,
+      allowNull: true, // Only applicable for "custom" recurringPattern
+      validate: {
+        isValidCustomDays(value) {
+          if (this.recurringPattern === "custom" && !value) {
+            throw new Error(
+              "customDays is required for custom recurringPattern"
+            );
+          }
+        },
+      },
     },
     slotInterval: {
       type: DataTypes.INTEGER, // Slot interval in minutes (e.g., 30 for 30-minute slots)
@@ -53,25 +54,23 @@ const DoctorSchedule = sequelize.define(
   {
     // Adding custom validation
     validate: {
-      validateSlotAvailability() {
-        // If tokenBased is false, slotInterval is required
+      validateSlotConfiguration() {
+        // Validate slotInterval and tokenBased configuration
         if (!this.tokenBased && !this.slotInterval) {
           throw new Error("slotInterval is required when tokenBased is false");
         }
 
-        // If tokenBased is true, availableTokens is required
-        if (this.tokenBased && !this.availableTokens) {
+        if (
+          this.tokenBased &&
+          (!this.availableTokens || this.availableTokens <= 0)
+        ) {
           throw new Error(
-            "availableTokens is required when tokenBased is true"
+            "availableTokens must be greater than 0 when tokenBased is true"
           );
         }
       },
     },
   }
 );
-
-// Associations
-DoctorSchedule.belongsTo(Doctor, { foreignKey: "doctorId" });
-Doctor.hasMany(DoctorSchedule, { foreignKey: "doctorId" });
 
 module.exports = DoctorSchedule;

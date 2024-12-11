@@ -2,7 +2,7 @@
 const express = require("express");
 const {
   createDoctorWithSchedule,
-  getDoctorsWithSchedules,
+  getDoctorWithSchedules,
   //   updateDoctorAvailability,
   //   getAllDoctors,
   //   deleteDoctor,
@@ -17,7 +17,7 @@ router.put("/:id/status");
 
 // PUT /doctors/:id/availability - Update a doctor's availability
 router.put("/:id/availability");
-router.get("/schedules", getDoctorsWithSchedules);
+router.get("/schedules", getDoctorWithSchedules);
 router.delete("/:id");
 
 module.exports = router;

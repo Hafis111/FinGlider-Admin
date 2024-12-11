@@ -9,13 +9,7 @@ const sequelize = new Sequelize({
   host: process.env.DB_HOST,
   port: process.env.DB_PORT,
   dialect: "mysql",
-  logging: process.env.NODE_ENV === "development" ? console.log : false, // Enable logging in development
-  pool: {
-    max: 10, // Maximum number of connections in pool
-    min: 0, // Minimum number of connections
-    acquire: 30000, // Max time (ms) to try getting a connection
-    idle: 10000, // Max time (ms) a connection can be idle before release
-  },
+  logging: console.log,
 });
 
 // Test database connection
