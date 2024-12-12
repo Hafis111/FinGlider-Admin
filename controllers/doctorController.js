@@ -94,7 +94,7 @@ const getDoctorWithSchedules = async (req, res) => {
             {
               model: BlockedSlot,
               as: "blockedSlots",
-              attributes: ["date", "startTime", "endTime"],
+              attributes: ["blockedDate", "startTime", "endTime"], // Change 'date' to 'blockedDate'
             },
           ],
         },
@@ -120,10 +120,10 @@ const getDoctorWithSchedules = async (req, res) => {
           recurringDates: recurringDates.map((date) => {
             // Filter booked and blocked slots for this date
             const bookedSlots = schedule.bookedSlots.filter(
-              (slot) => slot.date === date
+              (slot) => slot.blockedDate === date // Change 'date' to 'blockedDate'
             );
             const blockedSlots = schedule.blockedSlots.filter(
-              (slot) => slot.date === date
+              (slot) => slot.blockedDate === date // Change 'date' to 'blockedDate'
             );
 
             return {

@@ -6,6 +6,9 @@ const userRoutes = require("./routes/userRoutes");
 const departmentRoutes = require("./routes/departmentRoutes");
 const doctorRoutes = require("./routes/doctorRoutes");
 const dashboardRoutes = require("./routes/dashboardRoutes");
+const setupAssociations = require("./models/association");
+
+setupAssociations();
 
 const app = express();
 
