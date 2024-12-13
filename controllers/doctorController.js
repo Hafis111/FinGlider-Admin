@@ -3,7 +3,6 @@ const DoctorSchedule = require("../models/doctorSchedule");
 const Department = require("../models/department");
 const Booking = require("../models/Booking");
 const BlockedSlot = require("../models/BlockedSlot");
-const { generateRecurringDates } = require("../utils/reccuringLogic");
 const sequelize = require("../Config/db");
 
 const createDoctorWithSchedule = async (req, res) => {
@@ -74,7 +73,9 @@ const getDoctorWithSchedules = async (req, res) => {
   try {
     console.log("Fetching doctors with schedules...");
 
-    // Fetch all doctors with their schedules
+    // Set default booking count or get from request
+    const bookingCount = parseInt(req.query.bookingCount, 10) || 10;
+
     const doctors = await Doctor.findAll({
       include: [
         {
@@ -89,25 +90,27 @@ const getDoctorWithSchedules = async (req, res) => {
                 "endTime",
                 "tokenNumber",
                 "patientName",
+                "bookingDate",
               ],
             },
             {
               model: BlockedSlot,
               as: "blockedSlots",
-              attributes: ["blockedDate", "startTime", "endTime"], // Change 'date' to 'blockedDate'
+              attributes: ["blockedDate", "startTime", "endTime"],
             },
           ],
         },
       ],
     });
 
-    console.log("Doctors fetched:", doctors);
-
-    // Format the response
     const formattedDoctors = doctors.map((doctor) => {
       const schedules = doctor.doctorSchedules.map((schedule) => {
-        // Calculate recurring dates
-        const recurringDates = calculateRecurringDates(schedule);
+        // Calculate recurring dates based on booking count
+        const recurringDates = calculateRecurringDates(
+          schedule,
+          doctor.startDate,
+          bookingCount
+        );
 
         return {
           id: schedule.id,
@@ -118,16 +121,18 @@ const getDoctorWithSchedules = async (req, res) => {
           tokenBased: schedule.tokenBased,
           availableTokens: schedule.availableTokens,
           recurringDates: recurringDates.map((date) => {
-            // Filter booked and blocked slots for this date
             const bookedSlots = schedule.bookedSlots.filter(
-              (slot) => slot.blockedDate === date // Change 'date' to 'blockedDate'
+              (slot) => slot.bookingDate === date
             );
             const blockedSlots = schedule.blockedSlots.filter(
-              (slot) => slot.blockedDate === date // Change 'date' to 'blockedDate'
+              (slot) => slot.blockedDate === date
             );
 
             return {
               date,
+              dayOfWeek: new Date(date).toLocaleString("en-US", {
+                weekday: "long",
+              }),
               remainingTokens: schedule.tokenBased
                 ? schedule.availableTokens - bookedSlots.length
                 : null,
@@ -153,29 +158,42 @@ const getDoctorWithSchedules = async (req, res) => {
   }
 };
 
-// Helper function to calculate recurring dates
-const calculateRecurringDates = (schedule) => {
-  const { recurringPattern, customDays, startDate, endDate } = schedule;
-
+// Function to calculate recurring dates based on start date and booking count
+function calculateRecurringDates(schedule, startDate, bookingCount) {
   const recurringDates = [];
-  const currentDate = new Date(startDate);
-  const end = new Date(endDate);
+  const { recurringPattern, customDays } = schedule;
 
-  while (currentDate <= end) {
-    const dayIndex = currentDate.getDay(); // 0 for Sunday, 6 for Saturday
-    const customDaysArray = customDays?.split("").map(Number);
+  // Parse start date
+  let currentDate = new Date(startDate);
 
-    if (
-      recurringPattern === "daily" ||
-      (recurringPattern === "weekly" && customDaysArray[dayIndex] === 1)
-    ) {
-      recurringDates.push(currentDate.toISOString().split("T")[0]); // Push date in 'YYYY-MM-DD' format
+  while (recurringDates.length < bookingCount) {
+    if (recurringPattern === "daily") {
+      recurringDates.push(formatDate(currentDate));
+      currentDate.setDate(currentDate.getDate() + 1);
+    } else if (recurringPattern === "weekly") {
+      const dayOfWeek = currentDate.getDay();
+      if (customDays[dayOfWeek] === "1") {
+        recurringDates.push(formatDate(currentDate));
+      }
+      currentDate.setDate(currentDate.getDate() + 1);
+    } else if (recurringPattern === "custom" && customDays) {
+      const dayOfWeek = currentDate.getDay();
+      if (customDays[dayOfWeek] === "1") {
+        recurringDates.push(formatDate(currentDate));
+      }
+      currentDate.setDate(currentDate.getDate() + 1);
     }
-
-    currentDate.setDate(currentDate.getDate() + 1); // Increment date by 1 day
   }
 
   return recurringDates;
-};
+}
+
+// Helper function to format date as yyyy-mm-dd
+function formatDate(date) {
+  const year = date.getFullYear();
+  const month = (date.getMonth() + 1).toString().padStart(2, "0");
+  const day = date.getDate().toString().padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
 
 module.exports = { createDoctorWithSchedule, getDoctorWithSchedules };
