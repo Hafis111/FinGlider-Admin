@@ -6,7 +6,8 @@ const BlockedSlot = require("../models/BlockedSlot");
 const sequelize = require("../Config/db");
 
 const createDoctorWithSchedule = async (req, res) => {
-  const { name, departmentId, startDate, bookingCount, schedules } = req.body; // schedules is an array of schedule objects
+  const { name, departmentId, startDate, bookingCount, status, schedules } =
+    req.body;
 
   const transaction = await sequelize.transaction();
 
@@ -17,15 +18,29 @@ const createDoctorWithSchedule = async (req, res) => {
       return res.status(404).json({ error: "Department not found" });
     }
 
-    // Create doctor with global startDate and bookingCount
+    // Create doctor with status
     const doctor = await Doctor.create(
-      { name, departmentId, startDate, bookingCount: bookingCount || 7 },
+      {
+        name,
+        departmentId,
+        startDate,
+        bookingCount: bookingCount || 7,
+        status: status || "active", // Default to 'active' if no status provided
+      },
       { transaction }
     );
 
     // Prepare the schedules
     const preparedSchedules = schedules.map((schedule) => {
-      // Validate token-based scheduling
+      if (
+        schedule.recurringPattern === "monthly" &&
+        (!schedule.occurrences || schedule.occurrences.length === 0)
+      ) {
+        throw new Error(
+          "For monthly recurring schedules, occurrences (nthOccurrence and weekDay) must be provided."
+        );
+      }
+
       if (
         schedule.tokenBased &&
         (!schedule.availableTokens || schedule.availableTokens <= 0)
@@ -40,10 +55,11 @@ const createDoctorWithSchedule = async (req, res) => {
         startTime: schedule.startTime,
         endTime: schedule.endTime,
         recurringPattern: schedule.recurringPattern,
-        customDays: schedule.customDays,
-        slotInterval: schedule.slotInterval || null, // Null for token-based schedules
+        customDays: schedule.customDays || null,
+        slotInterval: schedule.slotInterval || null,
         tokenBased: schedule.tokenBased,
         availableTokens: schedule.availableTokens || null,
+        occurrences: schedule.occurrences || null,
       };
     });
 
@@ -53,14 +69,12 @@ const createDoctorWithSchedule = async (req, res) => {
     // Commit the transaction
     await transaction.commit();
 
-    // Return success response
     res.status(201).json({
       message: "Doctor and schedules created successfully",
       doctor,
       schedules: preparedSchedules,
     });
   } catch (error) {
-    // Rollback the transaction if any error occurs
     await transaction.rollback();
     console.error(error);
     res.status(500).json({
@@ -71,9 +85,6 @@ const createDoctorWithSchedule = async (req, res) => {
 
 const getDoctorWithSchedules = async (req, res) => {
   try {
-    console.log("Fetching doctors with schedules...");
-
-    // Set default booking count or get from request
     const bookingCount = parseInt(req.query.bookingCount, 10) || 10;
 
     const doctors = await Doctor.findAll({
@@ -105,7 +116,6 @@ const getDoctorWithSchedules = async (req, res) => {
 
     const formattedDoctors = doctors.map((doctor) => {
       const schedules = doctor.doctorSchedules.map((schedule) => {
-        // Calculate recurring dates based on booking count
         const recurringDates = calculateRecurringDates(
           schedule,
           doctor.startDate,
@@ -147,6 +157,7 @@ const getDoctorWithSchedules = async (req, res) => {
         id: doctor.id,
         name: doctor.name,
         departmentId: doctor.departmentId,
+        status: doctor.status, // Include the status here
         schedules,
       };
     });
@@ -158,34 +169,75 @@ const getDoctorWithSchedules = async (req, res) => {
   }
 };
 
-// Function to calculate recurring dates based on start date and booking count
+// Function to calculate recurring dates
 function calculateRecurringDates(schedule, startDate, bookingCount) {
   const recurringDates = [];
-  const { recurringPattern, customDays } = schedule;
+  const { recurringPattern, customDays, occurrences } = schedule;
 
-  // Parse start date
   let currentDate = new Date(startDate);
 
   while (recurringDates.length < bookingCount) {
     if (recurringPattern === "daily") {
       recurringDates.push(formatDate(currentDate));
       currentDate.setDate(currentDate.getDate() + 1);
-    } else if (recurringPattern === "weekly") {
+    } else if (recurringPattern === "weekly" && customDays) {
       const dayOfWeek = currentDate.getDay();
       if (customDays[dayOfWeek] === "1") {
         recurringDates.push(formatDate(currentDate));
       }
       currentDate.setDate(currentDate.getDate() + 1);
-    } else if (recurringPattern === "custom" && customDays) {
-      const dayOfWeek = currentDate.getDay();
-      if (customDays[dayOfWeek] === "1") {
-        recurringDates.push(formatDate(currentDate));
-      }
-      currentDate.setDate(currentDate.getDate() + 1);
+    } else if (recurringPattern === "monthly" && occurrences) {
+      occurrences.forEach(({ nthOccurrence, weekDay }) => {
+        const dates = generateMonthlyDates(
+          nthOccurrence,
+          weekDay,
+          currentDate,
+          bookingCount
+        );
+        recurringDates.push(...dates);
+      });
+      break; // Monthly schedules are added once
     }
   }
 
   return recurringDates;
+}
+
+// Helper to generate monthly dates for nth occurrence of a weekday
+function generateMonthlyDates(nthOccurrence, weekDay, startDate, limit) {
+  const dates = [];
+  let currentMonth = startDate.getMonth();
+  const weekDayIndex = [
+    "Sunday",
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+  ].indexOf(weekDay);
+
+  while (dates.length < limit) {
+    const monthStart = new Date(startDate.getFullYear(), currentMonth, 1);
+    const days = [];
+    for (let i = 0; i < 31; i++) {
+      const day = new Date(monthStart);
+      day.setDate(i + 1);
+      if (day.getDay() === weekDayIndex) {
+        days.push(day);
+      }
+    }
+
+    if (nthOccurrence === "last") {
+      dates.push(formatDate(days[days.length - 1]));
+    } else if (parseInt(nthOccurrence, 10) <= days.length) {
+      dates.push(formatDate(days[parseInt(nthOccurrence, 10) - 1]));
+    }
+
+    currentMonth++;
+  }
+
+  return dates;
 }
 
 // Helper function to format date as yyyy-mm-dd
