@@ -2,12 +2,19 @@ const Doctor = require("../models/doctor");
 const DoctorSchedule = require("../models/doctorSchedule");
 const Department = require("../models/department");
 const Booking = require("../models/Booking");
-const BlockedSlot = require("../models/BlockedSlot");
 const sequelize = require("../Config/db");
+const BlockedDate = require("../models/BlockedDate"); // Assuming you have a BlockedDate model
 
 const createDoctorWithSchedule = async (req, res) => {
-  const { name, departmentId, startDate, bookingCount, status, schedules } =
-    req.body;
+  const {
+    name,
+    departmentId,
+    startDate,
+    bookingCount,
+    status,
+    schedules,
+    blockedDates,
+  } = req.body;
 
   const transaction = await sequelize.transaction();
 
@@ -66,6 +73,15 @@ const createDoctorWithSchedule = async (req, res) => {
     // Create schedules in bulk
     await DoctorSchedule.bulkCreate(preparedSchedules, { transaction });
 
+    // Block the specified dates
+    if (blockedDates && blockedDates.length > 0) {
+      const blockedDatesData = blockedDates.map((date) => ({
+        doctorId: doctor.id,
+        date,
+      }));
+      await BlockedDate.bulkCreate(blockedDatesData, { transaction });
+    }
+
     // Commit the transaction
     await transaction.commit();
 
@@ -105,9 +121,9 @@ const getDoctorWithSchedules = async (req, res) => {
               ],
             },
             {
-              model: BlockedSlot,
-              as: "blockedSlots",
-              attributes: ["blockedDate", "startTime", "endTime"],
+              model: BlockedDate, // Include BlockedDate model
+              as: "blockedDates", // Alias for BlockedDate entries
+              attributes: ["blockedDate"], // Only the 'blockedDate' field
             },
           ],
         },
@@ -118,7 +134,7 @@ const getDoctorWithSchedules = async (req, res) => {
       const schedules = doctor.doctorSchedules.map((schedule) => {
         const recurringDates = calculateRecurringDates(
           schedule,
-          doctor.startDate,
+          doctor.startDate, // Ensure 'startDate' exists in your doctor model
           bookingCount
         );
 
@@ -134,8 +150,13 @@ const getDoctorWithSchedules = async (req, res) => {
             const bookedSlots = schedule.bookedSlots.filter(
               (slot) => slot.bookingDate === date
             );
-            const blockedSlots = schedule.blockedSlots.filter(
-              (slot) => slot.blockedDate === date
+
+            // Check if the date is blocked
+            const isBlocked = schedule.blockedDates.some(
+              (blockedDate) =>
+                new Date(blockedDate.blockedDate)
+                  .toISOString()
+                  .split("T")[0] === date // Ensure date comparison is done correctly
             );
 
             return {
@@ -146,8 +167,8 @@ const getDoctorWithSchedules = async (req, res) => {
               remainingTokens: schedule.tokenBased
                 ? schedule.availableTokens - bookedSlots.length
                 : null,
-              bookedSlots,
-              blockedSlots,
+              bookedSlotsCount: bookedSlots.length,
+              isBlocked: isBlocked,
             };
           }),
         };
@@ -157,7 +178,7 @@ const getDoctorWithSchedules = async (req, res) => {
         id: doctor.id,
         name: doctor.name,
         departmentId: doctor.departmentId,
-        status: doctor.status, // Include the status here
+        status: doctor.status,
         schedules,
       };
     });
@@ -168,6 +189,14 @@ const getDoctorWithSchedules = async (req, res) => {
     res.status(500).json({ error: "Failed to fetch doctor schedules" });
   }
 };
+
+// Helper function to format date as yyyy-mm-dd
+function formatDate(date) {
+  const year = date.getFullYear();
+  const month = (date.getMonth() + 1).toString().padStart(2, "0");
+  const day = date.getDate().toString().padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
 
 // Function to calculate recurring dates
 function calculateRecurringDates(schedule, startDate, bookingCount) {
@@ -238,14 +267,6 @@ function generateMonthlyDates(nthOccurrence, weekDay, startDate, limit) {
   }
 
   return dates;
-}
-
-// Helper function to format date as yyyy-mm-dd
-function formatDate(date) {
-  const year = date.getFullYear();
-  const month = (date.getMonth() + 1).toString().padStart(2, "0");
-  const day = date.getDate().toString().padStart(2, "0");
-  return `${year}-${month}-${day}`;
 }
 
 module.exports = { createDoctorWithSchedule, getDoctorWithSchedules };

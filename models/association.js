@@ -1,9 +1,7 @@
-// models/associations.js
-
 const Doctor = require("./doctor");
 const DoctorSchedule = require("./doctorSchedule");
 const Booking = require("./Booking");
-const BlockedSlot = require("./BlockedSlot");
+const BlockedDate = require("./BlockedDate");
 
 const setupAssociations = () => {
   // Doctor and DoctorSchedule association
@@ -20,12 +18,12 @@ const setupAssociations = () => {
   });
   Booking.belongsTo(DoctorSchedule, { foreignKey: "scheduleId" });
 
-  // DoctorSchedule and BlockedSlot association
-  DoctorSchedule.hasMany(BlockedSlot, {
+  // DoctorSchedule and BlockedDate association (should be DoctorSchedule -> BlockedDate)
+  DoctorSchedule.hasMany(BlockedDate, {
     foreignKey: "scheduleId",
-    as: "blockedSlots",
+    as: "blockedDates",
   });
-  BlockedSlot.belongsTo(DoctorSchedule, { foreignKey: "scheduleId" });
+  BlockedDate.belongsTo(DoctorSchedule, { foreignKey: "scheduleId" });
 };
 
 module.exports = setupAssociations;

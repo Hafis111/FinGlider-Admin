@@ -71,6 +71,10 @@ const DoctorSchedule = sequelize.define(
       type: DataTypes.INTEGER, // Number of available tokens
       allowNull: true, // Only relevant if tokenBased is true
     },
+    isBlocked: {
+      type: DataTypes.BOOLEAN, // Field to mark if the date is blocked
+      defaultValue: false, // Default to not blocked
+    },
   },
   {
     validate: {

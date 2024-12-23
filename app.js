@@ -7,6 +7,8 @@ const departmentRoutes = require("./routes/departmentRoutes");
 const doctorRoutes = require("./routes/doctorRoutes");
 const dashboardRoutes = require("./routes/dashboardRoutes");
 const setupAssociations = require("./models/association");
+const bookingRoutes = require("./routes/bookingRoutes");
+const blockedDateRoutes = require("./routes/blockedRoutes");
 
 setupAssociations();
 
@@ -26,6 +28,8 @@ app.use("/doctors", doctorRoutes);
 app.use(otpRoutes);
 app.use(userRoutes);
 app.use("/dashboard", dashboardRoutes);
+app.use("/bookings", bookingRoutes);
+app.use("/blockedDate", blockedDateRoutes);
 
 const PORT = 3010;
 app.listen(PORT, (err) => {
