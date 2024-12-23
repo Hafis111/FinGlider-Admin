@@ -1,6 +1,6 @@
 const Booking = require("../models/Booking");
 const DoctorSchedule = require("../models/doctorSchedule");
-const BlockedSlot = require("../models/BlockedSlot");
+const BlockedDate = require("../models/BlockedDate");
 const sequelize = require("../Config/db");
 
 // Create a new booking
@@ -15,19 +15,22 @@ const createBooking = async (req, res) => {
   } = req.body;
 
   try {
-    // Fetch the schedule with existing bookings and blocked slots for the same date
+    // Convert the booking date to ISO format (remove time portion)
+    const formattedBookingDate = new Date(bookingDate).toISOString();
+
+    // Fetch the schedule with existing bookings and blocked dates for the same date
     const schedule = await DoctorSchedule.findByPk(doctorScheduleId, {
       include: [
         {
           model: Booking,
           as: "bookedSlots",
-          where: { bookingDate },
+          where: { bookingDate: formattedBookingDate },
           required: false,
         },
         {
-          model: BlockedSlot,
-          as: "blockedSlots",
-          where: { blockedDate: bookingDate },
+          model: BlockedDate, // Use BlockedDate instead of BlockedSlot
+          as: "blockedDates",
+          where: { blockedDate: formattedBookingDate },
           required: false,
         },
       ],
@@ -37,9 +40,23 @@ const createBooking = async (req, res) => {
       return res.status(404).json({ error: "Doctor schedule not found" });
     }
 
+    // Check if the date is blocked
+    const isBlocked = schedule.blockedDates.some(
+      (blockedDate) =>
+        blockedDate.blockedDate.toISOString() === formattedBookingDate
+    );
+
+    if (isBlocked) {
+      return res
+        .status(400)
+        .json({ error: "This date is blocked for booking" });
+    }
+
     // Check if the slot is token-based
     if (schedule.tokenBased) {
-      const bookedTokens = schedule.bookedSlots.length;
+      const bookedTokens = schedule.bookedSlots.filter(
+        (slot) => slot.bookingDate === formattedBookingDate
+      ).length;
 
       if (bookedTokens >= schedule.availableTokens) {
         return res
@@ -52,7 +69,7 @@ const createBooking = async (req, res) => {
         (slot) =>
           slot.startTime === startTime &&
           slot.endTime === endTime &&
-          slot.bookingDate === bookingDate
+          slot.bookingDate === formattedBookingDate
       );
 
       if (isTimeConflict) {
@@ -60,22 +77,10 @@ const createBooking = async (req, res) => {
       }
     }
 
-    // Check if the slot is blocked
-    const isBlocked = schedule.blockedSlots.some(
-      (slot) =>
-        slot.startTime === startTime &&
-        slot.endTime === endTime &&
-        slot.bookingDate === bookingDate
-    );
-
-    if (isBlocked) {
-      return res.status(400).json({ error: "This time slot is blocked" });
-    }
-
     // Create the booking
     const booking = await Booking.create({
       doctorScheduleId,
-      bookingDate,
+      bookingDate: formattedBookingDate, // Ensure correct format
       startTime,
       endTime,
       patientName,
