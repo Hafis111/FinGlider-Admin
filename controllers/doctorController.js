@@ -25,7 +25,10 @@ const createDoctorWithSchedule = async (req, res) => {
       return res.status(404).json({ error: "Department not found" });
     }
 
-    // Create doctor with status
+    // Handle file upload for doctor image
+    const imagePath = req.file ? req.file.path : null;
+
+    // Create doctor with status and image
     const doctor = await Doctor.create(
       {
         name,
@@ -33,6 +36,7 @@ const createDoctorWithSchedule = async (req, res) => {
         startDate,
         bookingCount: bookingCount || 7,
         status: status || "active", // Default to 'active' if no status provided
+        image: imagePath, // Store image path
       },
       { transaction }
     );
@@ -179,6 +183,7 @@ const getDoctorWithSchedules = async (req, res) => {
         name: doctor.name,
         departmentId: doctor.departmentId,
         status: doctor.status,
+        image: doctor.image, // Add the doctor's image to the response
         schedules,
       };
     });

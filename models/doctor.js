@@ -35,6 +35,11 @@ const Doctor = sequelize.define(
       allowNull: false,
       defaultValue: 7, // Default to 7 bookings if not specified
     },
+    image: {
+      // Add the image field for storing the doctor's image URL or file path
+      type: DataTypes.STRING, // You can use STRING for storing the image URL/path
+      allowNull: true, // Image is optional, you can leave it blank if not provided
+    },
   },
   {
     timestamps: true, // Adds createdAt and updatedAt fields
