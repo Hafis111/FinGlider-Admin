@@ -3,8 +3,10 @@ const DoctorSchedule = require("../models/doctorSchedule");
 const Department = require("../models/department");
 const Booking = require("../models/Booking");
 const sequelize = require("../Config/db");
-const BlockedDate = require("../models/BlockedDate"); // Assuming you have a BlockedDate model
+const BlockedDate = require("../models/BlockedDate");
+const path = require("path");
 
+// Assuming you have a BlockedDate model
 const createDoctorWithSchedule = async (req, res) => {
   const {
     name,
@@ -42,7 +44,8 @@ const createDoctorWithSchedule = async (req, res) => {
     );
 
     // Prepare the schedules
-    const preparedSchedules = schedules.map((schedule) => {
+    const preparedSchedules = JSON.parse(schedules).map((schedule) => {
+      // Parse the schedules as JSON
       if (
         schedule.recurringPattern === "monthly" &&
         (!schedule.occurrences || schedule.occurrences.length === 0)
@@ -183,7 +186,9 @@ const getDoctorWithSchedules = async (req, res) => {
         name: doctor.name,
         departmentId: doctor.departmentId,
         status: doctor.status,
-        image: doctor.image, // Add the doctor's image to the response
+        image: doctor.image
+          ? `http://localhost:3010/uploads/${path.basename(doctor.image)}`
+          : null, // Ensure correct image path
         schedules,
       };
     });

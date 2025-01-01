@@ -1,4 +1,5 @@
 const express = require("express");
+const path = require("path");
 const bodyParser = require("body-parser");
 const cors = require("cors"); // Import cors package
 const otpRoutes = require("./routes/otpRoutes");
@@ -21,6 +22,10 @@ app.use(cors());
 // app.use(cors({ origin: 'http://localhost:3000' }));x
 
 app.use(bodyParser.json());
+app.use(
+  "/uploads",
+  express.static(path.join(__dirname, "middleware", "uploads"))
+);
 
 // Use routes and add base path directly in app.js
 app.use("/departments", departmentRoutes);
